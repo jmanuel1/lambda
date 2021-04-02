@@ -7,6 +7,7 @@ import (
   "strings"
   "unicode"
   "strconv"
+  "io"
 )
 
 type Term interface {
@@ -427,7 +428,13 @@ func main() {
   reader := bufio.NewReader(os.Stdin)
   for {
     fmt.Print("Enter expression or statement: ")
-    text, _ := reader.ReadString('\n')
+    text, err := reader.ReadString('\n')
+    if err == io.EOF {
+      break
+    } else if err != nil {
+      fmt.Printf("UNEXPECTED ERROR: %v\n", err)
+      os.Exit(1)
+    }
     stmt := Parse(text)
     if stmt == nil {
       fmt.Println("syntax error")
