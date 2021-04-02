@@ -13,27 +13,23 @@ type Term interface {
   Evaluate() Term
   Substitute(string, Term) Term
   FreeVars() []string
-  Infer(map[string]Type) Type
 }
 
 type Abstraction struct {
   Parameter string
-  ParameterType Type
   Body Term
 }
 
 func (a Abstraction) Print() {
   fmt.Print("lambda ")
   fmt.Print(a.Parameter)
-  fmt.Print(": ")
-  a.ParameterType.Print()
-  fmt.Print(". (")
+  fmt.Print(": (")
   a.Body.Print()
   fmt.Print(")")
 }
 
 func (a Abstraction) Evaluate() Term {
-  return Abstraction{a.Parameter, a.ParameterType, a.Body.Evaluate()}
+  return Abstraction{a.Parameter, a.Body.Evaluate()}
 }
 
 func (a Abstraction) Substitute(v string, term Term) Term {
@@ -43,11 +39,11 @@ func (a Abstraction) Substitute(v string, term Term) Term {
   for _, freeVar := range term.FreeVars() {
     if (a.Parameter == freeVar) {
       // renaming required
-      renamed := Abstraction{a.Parameter + "'", a.ParameterType, a.Body.Substitute(a.Parameter, Variable{a.Parameter + "'"})}
+      renamed := Abstraction{a.Parameter + "'", a.Body.Substitute(a.Parameter, Variable{a.Parameter + "'"})}
       return renamed.Substitute(v, term)
     }
   }
-  return Abstraction{a.Parameter, a.ParameterType, a.Body.Substitute(v, term)}
+  return Abstraction{a.Parameter, a.Body.Substitute(v, term)}
 }
 
 func (a Abstraction) FreeVars() []string {
@@ -59,11 +55,6 @@ func (a Abstraction) FreeVars() []string {
     }
   }
   return freeVars
-}
-
-func (a Abstraction) Infer(context map[string]Type) Type {
-  context[a.Parameter] = a.ParameterType // QUESTION: Mutation seen outside?
-  return FunctionType{a.ParameterType, a.Body.Infer(context)}
 }
 
 type Variable struct {
@@ -87,10 +78,6 @@ func (v Variable) Substitute(x string, term Term) Term {
 
 func (v Variable) FreeVars() []string {
   return []string{v.Var}
-}
-
-func (v Variable) Infer(context map[string]Type) Type {
-  return context[v.Var]
 }
 
 type Application struct {
@@ -124,49 +111,6 @@ func (a Application) FreeVars() []string {
     freeVars = append(freeVars, v)
   }
   return freeVars
-}
-
-func (a Application) Infer(context map[string]Type) Type {
-  fun, ok := a.Function.Infer(context).(FunctionType)
-  if !ok {
-    fmt.Println("type error")
-    os.Exit(1)
-    return nil
-  }
-  arg := a.Argument.Infer(context)
-
-  if fun.Argument == arg {
-    return fun.Return
-  } else {
-    fmt.Println("type error")
-    os.Exit(1)
-    return nil
-  }
-}
-
-type Type interface {
-  Print()
-}
-
-type BaseType struct {
-
-}
-
-func (o BaseType) Print() {
-  fmt.Print("o")
-}
-
-type FunctionType struct {
-  Argument Type
-  Return Type
-}
-
-func (f FunctionType) Print() {
-  fmt.Print("(")
-  f.Argument.Print()
-  fmt.Print(" -> ")
-  f.Return.Print()
-  fmt.Print(")")
 }
 
 func Parse(text string) Term {
@@ -207,41 +151,16 @@ func ParseAbstraction(text string, index int) (Abstraction, int) {
   index = SkipWhitespace(text, index)
   parameter, index := ([]rune(text))[index], index + 1
   index = Expect(text, index, ":")
-  typ, index := ParseType(text, index)
-  index = Expect(text, index, ".")
+  index = SkipWhitespace(text, index)
   index = Expect(text, index, "(")
   index = SkipWhitespace(text, index)
   body, index := ParseImpl(text, index)
   index = SkipWhitespace(text, index)
   index = Expect(text, index, ")")
-  return Abstraction{string(parameter), typ, body}, SkipWhitespace(text, index)
-}
-
-func ParseType(text string, index int) (Type, int) {
-  index = SkipWhitespace(text, index)
-  var typ Type
-  if (text[index] == 'o') {
-    index++
-    index = SkipWhitespace(text, index)
-    typ = BaseType{}
-  } else if (text[index] == '(') {
-    index++
-    typ, index = ParseType(text, index)
-  } else {
-    fmt.Printf("invalid type")
-    os.Exit(1)
-    return nil, -1
-  }
-  if (text[index:index+2] == "->") {
-    ret, index := ParseType(text, index + 2)
-    return FunctionType{typ, ret}, index
-  } else {
-    return typ, index
-  }
+  return Abstraction{string(parameter), body}, SkipWhitespace(text, index)
 }
 
 func Expect(text string, index int, s string) int {
-  index = SkipWhitespace(text, index)
   if strings.Index(string(([]rune(text))[index:]), s) == 0 {
     return index + len(s)
   } else {
@@ -271,14 +190,10 @@ func SkipWhitespace(text string, index int) int {
 
 func main() {
   reader := bufio.NewReader(os.Stdin)
-  fmt.Println("STLC with only one base type o and no base constants")
   fmt.Print("Enter expression: ")
   text, _ := reader.ReadString('\n')
   term := Parse(text)
   term.Print()
-  fmt.Println("")
-  typ := term.Infer(map[string]Type{})
-  typ.Print()
   fmt.Println("")
   term.Evaluate().Print()
 }
