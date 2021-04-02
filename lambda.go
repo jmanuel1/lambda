@@ -152,6 +152,10 @@ func (a Application) FreeVars() []string {
   return freeVars
 }
 
+type Statement interface {
+  Print()
+  Do()
+}
 
 type Let struct {
   Name string
@@ -165,21 +169,8 @@ func (l Let) Print() {
 
 var symbols map[string]Term
 
-func (l Let) Evaluate() Term {
+func (l Let) Do() {
   symbols[l.Name] = l.Value
-  return l.Value
-}
-
-func (l Let) Substitute(v string, term Term) Term {
-  fmt.Println("Cannot substitute into a let")
-  os.Exit(1)
-  return nil
-}
-
-func (l Let) FreeVars() []string {
-  fmt.Println("Cannot get free variables from let")
-  os.Exit(1)
-  return nil
 }
 
 type Number struct {
@@ -222,27 +213,60 @@ func (s Succ) FreeVars() []string {
   return []string{}
 }
 
-func Parse(text string) Term {
-  term, index := ParseImpl(text, 0)
-  ExpectEOF(text, index)
-  return term
+type TermStatement struct {
+  Term Term
 }
 
-func ExpectEOF(text string, index int) {
-  if len([]rune(text)) != index {
+func (t TermStatement) Print() {
+  t.Term.Print()
+}
+
+func (t TermStatement) Do() {
+  t.Term.Evaluate().Print()
+  fmt.Println()
+}
+
+func Parse(text string) Statement {
+  stmt, index := ParseImpl(text, 0)
+  if index < 0 {
+    return nil
+  }
+  if ExpectEOF(text, index) < 0 {
+    return nil
+  }
+  return stmt
+}
+
+func ExpectEOF(text string, index int) int {
+  if len([]rune(text)) > index {
     fmt.Printf("Expected EOF at %d\n", index)
-    os.Exit(1)
+    return -1
+  }
+  return index
+}
+
+func ParseImpl(text string, index int) (Statement, int) {
+  if strings.Index(string(([]rune(text))[index:]), "let") == 0 {
+    return ParseLet(text, index)
+  } else {
+    term, index := ParseTerm(text, index)
+    if index < 0 {
+      return nil, -1
+    }
+    return TermStatement{term}, index
   }
 }
 
-func ParseImpl(text string, index int) (Term, int) {
+func ParseTerm(text string, index int) (Term, int) {
   index = SkipWhitespace(text, index)
+  if index >= len([]rune(text)) {
+    fmt.Println("reached end of input, expected a term")
+    return nil, -1
+  }
   if text[index] == '(' {
     return ParseApplication(text, index)
   } else if strings.Index(string(([]rune(text))[index:]), "lambda") == 0 {
     return ParseAbstraction(text, index)
-  } else if strings.Index(string(([]rune(text))[index:]), "let") == 0 {
-    return ParseLet(text, index)
   } else if unicode.IsDigit([]rune(text)[index]) {
     return ParseNumber(text, index)
   } else {
@@ -260,22 +284,35 @@ func ParseNumber(text string, index int) (Number, int) {
   }
   if start == index {
     fmt.Printf("Expected number at %d\n", index)
-    os.Exit(1)
+    return Number{0}, -1
   }
   i, _ := strconv.Atoi(num)
   return Number{i}, index
 }
 
-func ParseLet(text string, index int) (Let, int) {
+func ParseLet(text string, index int) (*Let, int) {
   index = SkipWhitespace(text, index)
   index = Expect(text, index, "let ")
+  if index < 0 {
+    return nil, -1
+  }
   index = SkipWhitespace(text, index)
   name, index := ExpectID(text, index)
+  if index < 0 {
+    return nil, -1
+  }
   index = SkipWhitespace(text, index)
   index = Expect(text, index, "=")
+  if index < 0 {
+    return nil, -1
+  }
   index = SkipWhitespace(text, index)
-  value, index := ParseImpl(text, index)
-  return Let{name, value}, index
+  value, index := ParseTerm(text, index)
+  if index < 0 {
+    return nil, -1
+  }
+  let := Let{name, value}
+  return &let, index
 }
 
 func ExpectID(text string, index int) (string, int) {
@@ -283,7 +320,7 @@ func ExpectID(text string, index int) (string, int) {
   length := len([]rune(text))
   if index >= length || !unicode.IsLetter([]rune(text)[index]) {
     fmt.Printf("Expected ID at %d\n", index)
-    os.Exit(1)
+    return "", -1
   }
   for index < length && (unicode.IsDigit([]rune(text)[index]) || unicode.IsLetter([]rune(text)[index])) {
     id += string([]rune(text)[index])
@@ -297,12 +334,18 @@ func ParseApplication(text string, index int) (Application, int) {
   index++ // (
   var function Term
   var argument Term
-  function, index = ParseImpl(text, index)
+  function, index = ParseTerm(text, index)
+  if index < 0 {
+    return Application{Variable{""}, Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
   index++ // )
   index = SkipWhitespace(text, index)
   index++ // (
-  argument, index = ParseImpl(text, index)
+  argument, index = ParseTerm(text, index)
+  if index < 0 {
+    return Application{Variable{""}, Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
   index++ // )
   return Application{function, argument}, SkipWhitespace(text, index)
@@ -311,15 +354,30 @@ func ParseApplication(text string, index int) (Application, int) {
 func ParseAbstraction(text string, index int) (Abstraction, int) {
   index = SkipWhitespace(text, index)
   index = Expect(text, index, "lambda ")
+  if index < 0 {
+    return Abstraction{"", Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
   parameter, index := ([]rune(text))[index], index + 1
   index = Expect(text, index, ":")
+  if index < 0 {
+    return Abstraction{"", Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
   index = Expect(text, index, "(")
+  if index < 0 {
+    return Abstraction{"", Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
-  body, index := ParseImpl(text, index)
+  body, index := ParseTerm(text, index)
+  if index < 0 {
+    return Abstraction{"", Variable{""}}, -1
+  }
   index = SkipWhitespace(text, index)
   index = Expect(text, index, ")")
+  if index < 0 {
+    return Abstraction{"", Variable{""}}, -1
+  }
   return Abstraction{string(parameter), body}, SkipWhitespace(text, index)
 }
 
@@ -328,19 +386,25 @@ func Expect(text string, index int, s string) int {
     return index + len(s)
   } else {
     fmt.Printf("invalid expression, expected %s at %d, found %c instead\n", s, index, []rune(text)[index])
-    os.Exit(1)
     return -1
   }
 }
 
-func ParseVariable(text string, index int) (Variable, int) {
+func ParseVariable(text string, index int) (*Variable, int) {
   index = SkipWhitespace(text, index)
   variable, index := ExpectID(text, index)
+  if index < 0 {
+    return nil, -1
+  }
   index = SkipWhitespace(text, index)
-  return Variable{string(variable)}, index
+  term := Variable{string(variable)}
+  return &term, index
 }
 
 func SkipWhitespace(text string, index int) int {
+  if index >= len([]rune(text)) {
+    return index
+  }
   for _, v := range ([]rune(text))[index:] {
     if unicode.IsSpace(v) {
       index++
@@ -360,12 +424,15 @@ func main() {
   symbols["snd"] = Abstraction{"p", Application{Variable{"p"}, Abstraction{"t", Abstraction{"f", Variable{"f"}}}}}
   reader := bufio.NewReader(os.Stdin)
   for {
-    fmt.Print("Enter expression: ")
+    fmt.Print("Enter expression or statement: ")
     text, _ := reader.ReadString('\n')
-    term := Parse(text)
-    term.Print()
-    fmt.Println("")
-    term.Evaluate().Print()
-    fmt.Println("")
+    stmt := Parse(text)
+    if stmt == nil {
+      fmt.Println("syntax error")
+    } else {
+      stmt.Print()
+      fmt.Println("")
+      stmt.Do()
+    }
   }
 }
