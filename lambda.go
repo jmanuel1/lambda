@@ -282,15 +282,3 @@ func main() {
   fmt.Println("")
   term.Evaluate().Print()
 }
-
-// other things I could do
-// * fuel
-// * show steps
-// * add more reductions
-// * be smart and de Bruijn
-// * encoding
-// * names (let)
-// * builtins
-// * be iterative
-// * repl
-// * process calculi???
