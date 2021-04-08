@@ -417,7 +417,9 @@ func SkipWhitespace(text string, index int) int {
 
 func main() {
   symbols = make(map[string]Term)
-  symbols["succ"] = Succ{}
+  succ := Succ{}
+  symbols["succ"] = succ
+  symbols["plus"] = Abstraction{"n", Abstraction{"m", Application{Application{Variable{"n"}, succ}, Variable{"m"}}}}
   pair := Application{Application{Variable{"b"}, Variable{"f"}}, Variable{"s"}}
   symbols["pair"] = Abstraction{"f", Abstraction{"s", Abstraction{"b", pair}}}
   symbols["fst"] = Abstraction{"p", Application{Variable{"p"}, Abstraction{"t", Abstraction{"f", Variable{"t"}}}}}
