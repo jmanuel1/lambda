@@ -9,7 +9,6 @@ Note that the parsers I've written require a lot of parentheses.
 
 ## Other features I might add
 
-* fuel (ending computation after a set number of steps)
 * show steps
 * add more reductions
 * use de Bruijn indices

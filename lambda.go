@@ -10,7 +10,7 @@ import (
 
 type Term interface {
   Print()
-  Evaluate() Term
+  Evaluate(*int) Term
   Substitute(string, Term) Term
   FreeVars() []string
   Infer(map[string]Type) Type
@@ -32,8 +32,12 @@ func (a Abstraction) Print() {
   fmt.Print(")")
 }
 
-func (a Abstraction) Evaluate() Term {
-  return Abstraction{a.Parameter, a.ParameterType, a.Body.Evaluate()}
+func (a Abstraction) Evaluate(fuel *int) Term {
+  if *fuel <= 0 {
+    return a
+  }
+  *fuel--
+  return Abstraction{a.Parameter, a.ParameterType, a.Body.Evaluate(fuel)}
 }
 
 func (a Abstraction) Substitute(v string, term Term) Term {
@@ -74,7 +78,7 @@ func (v Variable) Print()  {
   fmt.Print(v.Var)
 }
 
-func (v Variable) Evaluate() Term {
+func (v Variable) Evaluate(fuel *int) Term {
   return v
 }
 
@@ -106,12 +110,16 @@ func (a Application) Print() {
   fmt.Print(")")
 }
 
-func (a Application) Evaluate() Term {
+func (a Application) Evaluate(fuel *int) Term {
+  if *fuel <= 0 {
+    return a
+  }
+  *fuel--
   abs, ok := a.Function.(Abstraction)
   if ok {
-    return abs.Body.Substitute(abs.Parameter, a.Argument).Evaluate()
+    return abs.Body.Substitute(abs.Parameter, a.Argument).Evaluate(fuel)
   }
-  return Application{a.Function.Evaluate(), a.Argument.Evaluate()}
+  return Application{a.Function.Evaluate(fuel), a.Argument.Evaluate(fuel)}
 }
 
 func (a Application) Substitute(v string, term Term) Term {
@@ -269,16 +277,21 @@ func SkipWhitespace(text string, index int) int {
   return index
 }
 
+const FUEL = 1000
+
 func main() {
   reader := bufio.NewReader(os.Stdin)
   fmt.Println("STLC with only one base type o and no base constants")
+  fmt.Printf("Fuel: expressions reduced up to only %d steps\n", FUEL)
   fmt.Print("Enter expression: ")
   text, _ := reader.ReadString('\n')
   term := Parse(text)
   term.Print()
-  fmt.Println("")
+  fmt.Println()
   typ := term.Infer(map[string]Type{})
   typ.Print()
-  fmt.Println("")
-  term.Evaluate().Print()
+  fmt.Println()
+  fuel := FUEL
+  term.Evaluate(&fuel).Print()
+  fmt.Printf("\nFuel left: %d\n", fuel)
 }
